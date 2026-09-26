@@ -10,6 +10,7 @@ export type {
   RequestHandler,
   Rpc,
   RpcOptions,
+  Service,
   ServiceOptions,
   Transport,
 } from './types.ts'

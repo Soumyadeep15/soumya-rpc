@@ -10,9 +10,13 @@ interface ClientContext {
   transport: Transport
   calls: PendingCalls
   timeout: number
+  ready: () => Promise<void>
 }
 
-export function createClient<T>(service: string, { transport, calls, timeout }: ClientContext) {
+export function createClient<T>(
+  service: string,
+  { transport, calls, timeout, ready }: ClientContext,
+) {
   const queue = queueName(service)
   const methods = new Map<string, Method>()
 
@@ -20,8 +24,8 @@ export function createClient<T>(service: string, { transport, calls, timeout }: 
     const id = randomUUID()
     const body = encodeRequest(method, args)
     const result = calls.add(id, `${service}.${method}`, timeout)
-    transport
-      .send(queue, id, body, timeout)
+    ready()
+      .then(() => transport.send(queue, id, body, timeout))
       .catch((error) => calls.fail(id, () => toRpcError(error)))
     return result
   }

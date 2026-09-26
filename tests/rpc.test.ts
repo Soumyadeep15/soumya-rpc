@@ -1,9 +1,19 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { createRpc, type Rpc, RpcError, TimeoutError } from '../src/index.ts'
+import { createRpc, type Rpc, RpcError, TimeoutError, type Transport } from '../src/index.ts'
 import { createMemoryTransport } from '../src/testing.ts'
 import { type UserService, userMethods } from './fixtures.ts'
 
 let rpc: Rpc
+
+function withSlowServe(transport: Transport, delay: number): Transport {
+  return {
+    ...transport,
+    async serve(...args) {
+      await new Promise((resolve) => setTimeout(resolve, delay))
+      return transport.serve(...args)
+    },
+  }
+}
 
 async function setup(timeout?: number) {
   rpc = await createRpc({ transport: createMemoryTransport(), ...(timeout && { timeout }) })
@@ -117,6 +127,52 @@ describe('rpc', () => {
     await rpc.close()
     await expect(inFlight).resolves.toBe('awake')
     await expect(users.add(1, 2)).rejects.toMatchObject({ code: 'CLOSED' })
+  })
+
+  it('waits for its own services to finish registering before calling them', async () => {
+    rpc = await createRpc({ transport: withSlowServe(createMemoryTransport(), 30) })
+    rpc.service('user', userMethods)
+    await expect(rpc.connect<UserService>('user').add(1, 2)).resolves.toBe(3)
+  })
+
+  it('adds functions to a service one by one', async () => {
+    rpc = await createRpc({ transport: createMemoryTransport() })
+    const math = rpc.service('math')
+    math.add('double', (n: number) => n * 2).add('negate', (n: number) => -n)
+    const client = rpc.connect('math')
+    await expect(client.double?.(4)).resolves.toBe(8)
+    await expect(client.negate?.(4)).resolves.toBe(-4)
+  })
+
+  it('finds functions added after the service started', async () => {
+    rpc = await createRpc({ transport: createMemoryTransport() })
+    const late = rpc.service('late')
+    const client = rpc.connect('late')
+    await expect(client.hello?.()).rejects.toMatchObject({ code: 'METHOD_NOT_FOUND' })
+    late.add('hello', () => 'hi')
+    await expect(client.hello?.()).resolves.toBe('hi')
+  })
+
+  it('merges every registration under one name into a single consumer', async () => {
+    const transport = createMemoryTransport()
+    const served: string[] = []
+    rpc = await createRpc({
+      transport: {
+        ...transport,
+        serve: (queue, ...rest) => {
+          served.push(queue)
+          return transport.serve(queue, ...rest)
+        },
+      },
+    })
+    rpc.service('user', userMethods)
+    rpc.service('user').add('ping', () => 'pong')
+    rpc.service('user', { version: () => 2 })
+    const client = rpc.connect('user')
+    await expect(client.add?.(1, 2)).resolves.toBe(3)
+    await expect(client.ping?.()).resolves.toBe('pong')
+    await expect(client.version?.()).resolves.toBe(2)
+    expect(served).toEqual(['rpc.user'])
   })
 
   it('connects two rpc instances over a shared transport', async () => {

@@ -10,7 +10,7 @@ interface Route {
   queue: string
   concurrency: number
   handle: RequestHandler
-  boundTo?: ChannelModel
+  binding?: { model: ChannelModel; done: Promise<void> }
 }
 
 interface Consumer {
@@ -52,9 +52,12 @@ export async function createAmqpTransport(
     return channel
   }
 
-  async function bind(model: ChannelModel, route: Route) {
-    if (route.boundTo === model) return
-    route.boundTo = model
+  function bind(model: ChannelModel, route: Route): Promise<void> {
+    if (route.binding?.model !== model) route.binding = { model, done: consume(model, route) }
+    return route.binding.done
+  }
+
+  async function consume(model: ChannelModel, route: Route) {
     const channel = await openChannel(model)
     await channel.assertQueue(route.queue, { durable: true })
     await channel.prefetch(route.concurrency)

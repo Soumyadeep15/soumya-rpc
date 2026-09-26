@@ -36,6 +36,7 @@ export type Middleware = (context: Context, next: () => Promise<unknown>) => Pro
 export interface RpcOptions {
   url?: string | undefined
   timeout?: number | undefined
+  concurrency?: number | undefined
   transport?: Transport | undefined
   onError?: ((error: Error) => void) | undefined
 }
@@ -48,7 +49,12 @@ export interface ConnectOptions {
   timeout?: number | undefined
 }
 
+export interface Service {
+  add(name: string, fn: AnyFunction): Service
+}
+
 export interface Rpc {
+  service(name: string): Service
   service<T extends object>(name: string, methods: T, options?: ServiceOptions): T
   connect<T extends object = Methods>(name: string, options?: ConnectOptions): Client<T>
   use(middleware: Middleware): void
