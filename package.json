@@ -1,6 +1,6 @@
 {
   "name": "soumya-rpc",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Dead-simple, type-safe RPC between microservices over RabbitMQ",
   "type": "module",
   "license": "MIT",
